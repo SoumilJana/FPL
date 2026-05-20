@@ -10,9 +10,11 @@ export default function MatchesPage() {
   const {
     matches, tournamentState, isAdmin, loading, error,
     generateMainQualifierFixtures, generateSemiFinalsFixtures, generateFinalFixture,
+    resetTournament,
     overallStandings
   } = useTournament();
   const [generating, setGenerating] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Wildcard override state
   const [showWildcardPicker, setShowWildcardPicker] = useState(false);
@@ -43,6 +45,14 @@ export default function MatchesPage() {
     setGenerating(null);
   };
 
+  const handleReset = async () => {
+    if (confirm("Are you sure you want to reset the entire tournament? This will erase all scores and generated fixtures.")) {
+      setIsResetting(true);
+      await resetTournament();
+      setIsResetting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -60,9 +70,21 @@ export default function MatchesPage() {
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-100">Match Center</h1>
-        <p className="text-slate-400 mt-2">View and manage all tournament fixtures and results.</p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-100">Match Center</h1>
+          <p className="text-slate-400 mt-2">View and manage all tournament fixtures and results.</p>
+        </div>
+        {isAdmin && (
+          <button
+            onClick={handleReset}
+            disabled={isResetting}
+            className="flex items-center space-x-2 px-4 py-2 bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-600/30 rounded-lg transition-colors text-sm font-medium"
+          >
+            {isResetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
+            <span>Reset Data</span>
+          </button>
+        )}
       </div>
 
       {error && (

@@ -27,6 +27,7 @@ interface TournamentContextType {
   generateMainQualifierFixtures: () => Promise<void>;
   generateSemiFinalsFixtures: (wildcardTeamId?: string) => Promise<void>;
   generateFinalFixture: () => Promise<void>;
+  resetTournament: () => Promise<void>;
 
   // State
   loading: boolean;
@@ -331,6 +332,38 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     await fetchAll();
   };
 
+  // Reset Tournament Data (Clear scores & auto-generated fixtures)
+  const resetTournament = async () => {
+    // 1. Clear all scores and match metadata
+    const { error: err1 } = await supabase
+      .from('matches')
+      .update({
+        team_a_score: null,
+        team_b_score: null,
+        mom: null,
+        red_card_team_id: null,
+        notes: null,
+        penalty_shootout_winner_id: null,
+      })
+      .neq('id', 'dummy'); // Updates all rows
+
+    // 2. Clear teams for knockout stages (since they are generated dynamically)
+    const { error: err2 } = await supabase
+      .from('matches')
+      .update({
+        team_a_id: null,
+        team_b_id: null,
+      })
+      .in('stage', ['MAIN_QUALIFIERS', 'SEMI_FINALS', 'FINAL']);
+
+    if (err1 || err2) {
+      setError(`Failed to reset tournament: ${err1?.message || err2?.message}`);
+      return;
+    }
+
+    await fetchAll();
+  };
+
   // --------------- Helpers ---------------
 
   const getTeamName = (id: string | null): string => {
@@ -347,7 +380,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       teams, matches, groupTeams, groupStandings, overallStandings,
       tournamentState, qualificationStatus,
       isAdmin, loginAdmin, logoutAdmin,
-      updateMatchResult, generateMainQualifierFixtures, generateSemiFinalsFixtures, generateFinalFixture,
+      updateMatchResult, generateMainQualifierFixtures, generateSemiFinalsFixtures, generateFinalFixture, resetTournament,
       loading, error,
       getTeamName, getTeamGroup,
     }}>
