@@ -345,7 +345,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         notes: null,
         penalty_shootout_winner_id: null,
       })
-      .neq('id', 'dummy'); // Updates all rows
+      .not('id', 'is', null); // Updates all rows safely
 
     // 2. Clear teams for knockout stages (since they are generated dynamically)
     const { error: err2 } = await supabase
