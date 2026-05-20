@@ -83,7 +83,7 @@ export default function BracketsPage() {
 
       {/* Bracket Layout */}
       <div className="overflow-x-auto pb-8">
-        <div className="min-w-[850px] flex justify-center items-start gap-8 lg:gap-12 py-6 relative">
+        <div className="min-w-[850px] flex justify-center items-center gap-8 lg:gap-12 py-6 relative">
 
           {/* Main Qualifiers Column */}
           <div className="flex flex-col gap-12 relative z-10">
@@ -94,19 +94,19 @@ export default function BracketsPage() {
           </div>
 
           {/* Semi Finals Column */}
-          <div className="flex flex-col gap-20 pt-16 relative z-10">
+          <div className="flex flex-col gap-20 relative z-10">
             <h3 className="text-center font-bold text-emerald-400 mb-2 uppercase tracking-wider text-xs sm:text-sm">Semi Finals</h3>
             <BracketNode match={sfMatches[0]} title="SF 1 · Best vs 3rd" />
             <BracketNode match={sfMatches[1]} title="SF 2 · 2nd vs Wildcard" />
           </div>
 
           {/* Final Column */}
-          <div className="flex flex-col items-center pt-32 relative z-10">
+          <div className="flex flex-col items-center relative z-10">
             <h3 className="text-center font-bold text-amber-400 mb-4 uppercase tracking-wider text-xs sm:text-sm">Final</h3>
             <BracketNode match={finalMatch} title="Grand Final" />
 
             {champion && (
-              <div className="mt-8 text-center">
+              <div className="absolute top-full mt-8 text-center w-full flex justify-center">
                 <div className="inline-block bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/50 rounded-2xl px-8 py-5 shadow-[0_0_40px_rgba(245,158,11,0.25)]">
                   <Trophy className="w-8 h-8 text-amber-400 mx-auto mb-2" />
                   <span className="block text-amber-500 text-xs font-bold uppercase tracking-widest mb-1">Tournament Champion</span>
