@@ -14,7 +14,7 @@ export default function Dashboard() {
   const totalMatchesPlayed = tournamentState
     ? (tournamentState.rq_completed + tournamentState.mq_completed + tournamentState.sf_completed + tournamentState.final_completed)
     : 0;
-  const totalGoals = overallStandings.reduce((sum, stat) => sum + stat.goals_for, 0);
+  const leadingTeam = overallStandings.length > 0 ? overallStandings[0].team_name : '-';
 
   if (loading) {
     return (
@@ -50,8 +50,8 @@ export default function Dashboard() {
             <Activity className="w-6 h-6 text-blue-400" />
           </div>
           <div>
-            <p className="text-sm text-slate-400">Goals Scored</p>
-            <p className="text-2xl font-bold text-slate-100">{totalGoals}</p>
+            <p className="text-sm text-slate-400">Leading Team</p>
+            <p className="text-2xl font-bold text-slate-100 truncate max-w-[200px]" title={leadingTeam}>{leadingTeam}</p>
           </div>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center space-x-4 shadow-lg">
@@ -65,6 +65,18 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Overall Table */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-100 mb-4 flex items-center">
+          <span className="bg-slate-800 px-3 py-1.5 rounded-lg mr-3 text-sm">Tournament</span>
+          Overall Standings
+        </h2>
+        <p className="text-sm text-slate-400 mb-4">
+          Cumulative performance across all stages. Used for wildcard comparison and tournament-wide rankings.
+        </p>
+        <OverallStandingsTable standings={overallStandings} />
+      </div>
+
       {/* Group Tables */}
       <div>
         <h2 className="text-xl font-bold text-slate-100 mb-4 flex items-center">
@@ -76,18 +88,6 @@ export default function Dashboard() {
           <GroupStandingsTable title="Group B" standings={groupBStandings} />
           <GroupStandingsTable title="Group C" standings={groupCStandings} />
         </div>
-      </div>
-
-      {/* Overall Table */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-100 mb-4 flex items-center">
-          <span className="bg-slate-800 px-3 py-1.5 rounded-lg mr-3 text-sm">Tournament</span>
-          Overall Standings
-        </h2>
-        <p className="text-sm text-slate-400 mb-4">
-          Cumulative performance across all stages. Used for wildcard comparison and tournament-wide rankings.
-        </p>
-        <OverallStandingsTable standings={overallStandings} />
       </div>
 
     </div>

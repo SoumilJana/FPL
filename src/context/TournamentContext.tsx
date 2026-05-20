@@ -73,11 +73,51 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         supabase.from('qualification_status').select('*'),
       ]);
 
+      let finalGroupStandings = groupStandingsData || [];
+      let finalOverallStandings = overallStandingsData || [];
+
+      if (teamsData && groupTeamsData) {
+        const groupTeamIds = finalGroupStandings.map(s => s.team_id);
+        const missingGroupTeams = groupTeamsData.filter(gt => !groupTeamIds.includes(gt.team_id));
+        
+        const paddedMissingGroupStandings = missingGroupTeams.map(gt => {
+          const team = teamsData.find(t => t.id === gt.team_id);
+          return {
+            group_id: gt.group_id,
+            team_id: gt.team_id,
+            team_name: team?.name || 'Unknown',
+            logo_url: team?.logo_url || null,
+            played: 0, wins: 0, draws: 0, losses: 0,
+            goals_for: 0, goals_against: 0, goal_difference: 0,
+            red_cards: 0, points: 0, group_rank: 99
+          };
+        });
+
+        finalGroupStandings = [...finalGroupStandings, ...paddedMissingGroupStandings].sort((a, b) => {
+          if (a.group_id !== b.group_id) return a.group_id.localeCompare(b.group_id);
+          return a.group_rank - b.group_rank;
+        });
+
+        const overallTeamIds = finalOverallStandings.map(s => s.team_id);
+        const missingOverallTeams = teamsData.filter(t => !overallTeamIds.includes(t.id));
+
+        const paddedMissingOverallStandings = missingOverallTeams.map(t => ({
+            team_id: t.id,
+            team_name: t.name,
+            logo_url: t.logo_url,
+            played: 0, wins: 0, draws: 0, losses: 0,
+            goals_for: 0, goals_against: 0, goal_difference: 0,
+            red_cards: 0, points: 0
+        }));
+
+        finalOverallStandings = [...finalOverallStandings, ...paddedMissingOverallStandings].sort((a, b) => b.points - a.points);
+      }
+
       if (teamsData) setTeams(teamsData);
       if (matchesData) setMatches(matchesData);
       if (groupTeamsData) setGroupTeams(groupTeamsData);
-      if (groupStandingsData) setGroupStandings(groupStandingsData);
-      if (overallStandingsData) setOverallStandings(overallStandingsData);
+      setGroupStandings(finalGroupStandings);
+      setOverallStandings(finalOverallStandings);
       if (stateData && stateData.length > 0) setTournamentState(stateData[0]);
       if (qualData) setQualificationStatus(qualData);
 
