@@ -1,6 +1,6 @@
 "use client";
 
-import { useTournament } from "@/context/TournamentContext";
+import { useTournament, GroupOverrides } from "@/context/TournamentContext";
 import MatchCard from "@/components/match-card";
 import { Stage } from "@/types/tournament";
 import { Loader2, Zap, AlertCircle } from "lucide-react";
@@ -9,15 +9,22 @@ import { useState } from "react";
 export default function MatchesPage() {
   const {
     matches, tournamentState, isAdmin, loading, error,
-    generateMainQualifierFixtures, generateSemiFinalsFixtures, generateFinalFixture,
+    generateMainQualifierFixtures, generateMainQualifierFixturesWithOverrides,
+    generateSemiFinalsFixtures, generateFinalFixture,
     resetTournament,
-    overallStandings
+    overallStandings, groupStandings, getGroupTies
   } = useTournament();
   const [generating, setGenerating] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
 
   // Wildcard override state
   const [showWildcardPicker, setShowWildcardPicker] = useState(false);
+
+  // Group override state
+  const [showGroupOverride, setShowGroupOverride] = useState(false);
+  const [groupOverrides, setGroupOverrides] = useState<GroupOverrides>({
+    A: {}, B: {}, C: {}
+  });
 
   const stages: { key: Stage; label: string }[] = [
     { key: 'ROUND_QUALIFIERS', label: 'Round Qualifiers' },
@@ -29,6 +36,13 @@ export default function MatchesPage() {
   const handleGenerateMQ = async () => {
     setGenerating('mq');
     await generateMainQualifierFixtures();
+    setGenerating(null);
+  };
+
+  const handleGenerateMQOverrides = async () => {
+    setGenerating('mq');
+    await generateMainQualifierFixturesWithOverrides(groupOverrides);
+    setShowGroupOverride(false);
     setGenerating(null);
   };
 
@@ -103,17 +117,72 @@ export default function MatchesPage() {
         // Stage progression buttons (admin only)
         let progressionButton = null;
         if (isAdmin && tournamentState) {
-          // "Generate MQ Fixtures" — shown when RQ complete and MQ teams not yet assigned
           if (stage.key === 'MAIN_QUALIFIERS' && tournamentState.rq_complete && isLocked) {
+            const ties = getGroupTies();
+            const hasTies = ties.length > 0;
+
             progressionButton = (
-              <button
-                onClick={handleGenerateMQ}
-                disabled={generating === 'mq'}
-                className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                {generating === 'mq' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                <span>Generate MQ Fixtures</span>
-              </button>
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleGenerateMQ}
+                    disabled={generating === 'mq' || hasTies}
+                    className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {generating === 'mq' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    <span>Auto Generate MQ</span>
+                  </button>
+                  {hasTies && (
+                    <button
+                      onClick={() => setShowGroupOverride(!showGroupOverride)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      <span>Override Group Selections</span>
+                    </button>
+                  )}
+                </div>
+
+                {hasTies && showGroupOverride && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-4">
+                    <p className="text-amber-400 text-xs font-bold uppercase tracking-wider">Select Teams Advancing from Tied Groups</p>
+                    
+                    {(['A', 'B', 'C'] as const).map((groupId) => {
+                      const teamsInGroup = groupStandings.filter(s => s.group_id === groupId);
+                      return (
+                        <div key={groupId} className="space-y-2 border-t border-amber-500/20 pt-2 first:border-0 first:pt-0">
+                          <span className="text-sm font-bold text-slate-300">Group {groupId}</span>
+                          <div className="flex flex-col sm:flex-row gap-3">
+                            <select
+                              value={groupOverrides[groupId]?.rank1 || ''}
+                              onChange={e => setGroupOverrides(prev => ({ ...prev, [groupId]: { ...prev[groupId], rank1: e.target.value } }))}
+                              className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:border-amber-500 flex-1"
+                            >
+                              <option value="">-- Select Rank 1 --</option>
+                              {teamsInGroup.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}
+                            </select>
+                            <select
+                              value={groupOverrides[groupId]?.rank2 || ''}
+                              onChange={e => setGroupOverrides(prev => ({ ...prev, [groupId]: { ...prev[groupId], rank2: e.target.value } }))}
+                              className="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm text-white focus:border-amber-500 flex-1"
+                            >
+                              <option value="">-- Select Rank 2 --</option>
+                              {teamsInGroup.map(t => <option key={t.team_id} value={t.team_id}>{t.team_name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    
+                    <button
+                      onClick={handleGenerateMQOverrides}
+                      disabled={generating === 'mq'}
+                      className="mt-2 w-full px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Generate MQ with Selected Teams
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           }
           // "Generate SF Fixtures" — shown when MQ complete and SF teams not yet assigned

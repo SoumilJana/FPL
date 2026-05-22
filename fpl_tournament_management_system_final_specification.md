@@ -373,16 +373,13 @@ Admins do NOT manually select tournament stages.
 
 ---
 
-# Red Card Penalty
+# Red Card System
 
-If a team receives a red card:
+Red cards are recorded as an incident per match.
 
-- 1 point deduction applied
+Red cards do NOT affect points.
 
-Example:
-- Win = +3
-- Red Card = -1
-- Final Points = +2
+A red card results in a 2-minute player suspension during the match.
 
 ---
 
@@ -400,12 +397,13 @@ GD = Goals For - Goals Against
 
 # Table Sorting Rules
 
-Standings are sorted using:
+Standings are sorted using the following tie-breakers in order:
 
 1. Points
 2. Goal Difference (GD)
+3. Goals Scored (most goals scored)
+4. Goals Conceded (fewest goals conceded)
 
----
 
 # MOM (Man of the Match) System
 

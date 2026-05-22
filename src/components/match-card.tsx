@@ -11,7 +11,7 @@ interface MatchCardProps {
 }
 
 export default function MatchCard({ match }: MatchCardProps) {
-  const { isAdmin, updateMatchResult, getTeamName } = useTournament();
+  const { isAdmin, updateMatchResult, getTeamName, correctMatchResult } = useTournament();
 
   const teamAName = getTeamName(match.team_a_id);
   const teamBName = getTeamName(match.team_b_id);
@@ -23,23 +23,61 @@ export default function MatchCard({ match }: MatchCardProps) {
   const [notes, setNotes] = useState(match.notes || "");
   const [shootoutWinnerId, setShootoutWinnerId] = useState(match.penalty_shootout_winner_id || "");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // When scores change, clear any stale penalty winner and error
+  const handleScoreAChange = (val: string) => {
+    setScoreA(val);
+    setShootoutWinnerId("");
+    setSaveError(null);
+  };
+  const handleScoreBChange = (val: string) => {
+    setScoreB(val);
+    setShootoutWinnerId("");
+    setSaveError(null);
+  };
+
+  // Effective scores: blank field = 0 (one team scored nothing)
+  // Both blank = nothing entered yet → treated as null → stays SCHEDULED
+  const bothBlank = scoreA === "" && scoreB === "";
+  const effectiveA = bothBlank ? null : (scoreA === "" ? 0 : parseInt(scoreA, 10));
+  const effectiveB = bothBlank ? null : (scoreB === "" ? 0 : parseInt(scoreB, 10));
+
+  const isKnockoutStage = match.stage !== 'ROUND_QUALIFIERS';
+  // Knockout draw: non-RQ, scores exist, and they are equal
+  const isKnockoutDraw = isKnockoutStage && !bothBlank && effectiveA === effectiveB;
 
   const handleSave = async () => {
+    setSaveError(null);
+
+    // Hard block: knockout draw must have a penalty winner before saving
+    if (isKnockoutDraw && !shootoutWinnerId) {
+      setSaveError("Knockout draw — you must select a Penalty Shootout Winner before saving.");
+      return;
+    }
+
     setSaving(true);
     await updateMatchResult(match.id, {
-      team_a_score: scoreA === "" ? null : parseInt(scoreA, 10),
-      team_b_score: scoreB === "" ? null : parseInt(scoreB, 10),
+      team_a_score: effectiveA,
+      team_b_score: effectiveB,
       mom: mom || null,
       red_card_team_id: redCardTeamId || null,
       notes: notes || null,
-      penalty_shootout_winner_id: shootoutWinnerId || null,
+      // Only send penalty winner for genuine knockout draws; otherwise clear it
+      penalty_shootout_winner_id: (isKnockoutDraw && shootoutWinnerId) ? shootoutWinnerId : null,
     });
     setSaving(false);
   };
 
-  const isLocked = !match.team_a_id || !match.team_b_id;
-  const isKnockoutTie = match.stage !== 'ROUND_QUALIFIERS' && scoreA !== "" && scoreB !== "" && scoreA === scoreB;
+  const handleCorrect = async () => {
+    if (confirm("Are you sure? This will reset this match's score AND wipe any downstream fixtures (Semi Finals/Final) so you can regenerate them cleanly.")) {
+      setSaving(true);
+      await correctMatchResult(match.id);
+      setSaving(false);
+    }
+  };
 
+  const isLocked = !match.team_a_id || !match.team_b_id;
   const stageLabel = match.stage.replace(/_/g, ' ');
 
   return (
@@ -81,7 +119,7 @@ export default function MatchCard({ match }: MatchCardProps) {
                   type="number"
                   min="0"
                   value={scoreA}
-                  onChange={e => setScoreA(e.target.value)}
+                  onChange={e => handleScoreAChange(e.target.value)}
                   className="w-14 bg-slate-950 border border-slate-700 rounded text-center text-xl font-bold py-1 text-white focus:border-emerald-500 outline-none"
                 />
                 <span className="text-slate-500 font-bold">:</span>
@@ -89,7 +127,7 @@ export default function MatchCard({ match }: MatchCardProps) {
                   type="number"
                   min="0"
                   value={scoreB}
-                  onChange={e => setScoreB(e.target.value)}
+                  onChange={e => handleScoreBChange(e.target.value)}
                   className="w-14 bg-slate-950 border border-slate-700 rounded text-center text-xl font-bold py-1 text-white focus:border-emerald-500 outline-none"
                 />
               </div>
@@ -145,7 +183,7 @@ export default function MatchCard({ match }: MatchCardProps) {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Red Card (Penalty -1 Pt)</label>
+                <label className="block text-xs text-slate-400 mb-1">Red Card</label>
                 <select
                   value={redCardTeamId}
                   onChange={e => setRedCardTeamId(e.target.value)}
@@ -158,15 +196,24 @@ export default function MatchCard({ match }: MatchCardProps) {
               </div>
             </div>
 
-            {isKnockoutTie && (
-              <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3">
-                <label className="block text-xs text-rose-400 font-bold mb-1 uppercase tracking-wider">Penalty Shootout Winner</label>
+            {/* Knockout draw — penalty winner required */}
+            {isKnockoutDraw && (
+              <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3 space-y-2">
+                <label className="block text-xs text-rose-400 font-bold uppercase tracking-wider">
+                  Penalty Shootout Winner <span className="text-rose-500">*</span>
+                </label>
+                <p className="text-[11px] text-rose-300/70">
+                  Scores are equal — a penalty winner must be selected to advance a team.
+                </p>
                 <select
                   value={shootoutWinnerId}
-                  onChange={e => setShootoutWinnerId(e.target.value)}
-                  className="w-full bg-slate-950 border border-rose-500/50 rounded px-3 py-1.5 text-sm text-white focus:border-rose-500 outline-none appearance-none"
+                  onChange={e => { setShootoutWinnerId(e.target.value); setSaveError(null); }}
+                  className={cn(
+                    "w-full bg-slate-950 rounded px-3 py-1.5 text-sm text-white outline-none appearance-none border",
+                    saveError ? "border-rose-500" : "border-rose-500/50 focus:border-rose-500"
+                  )}
                 >
-                  <option value="">Select Winner...</option>
+                  <option value="">— Select Penalty Winner —</option>
                   {match.team_a_id && <option value={match.team_a_id}>{teamAName}</option>}
                   {match.team_b_id && <option value={match.team_b_id}>{teamBName}</option>}
                 </select>
@@ -183,14 +230,32 @@ export default function MatchCard({ match }: MatchCardProps) {
               />
             </div>
 
+            {/* Save error banner */}
+            {saveError && (
+              <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/40 text-rose-400 text-xs rounded-lg px-3 py-2">
+                <span className="shrink-0 mt-0.5">⚠</span>
+                <span>{saveError}</span>
+              </div>
+            )}
+
             <button
               onClick={handleSave}
               disabled={saving}
               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2 rounded-lg transition-colors text-sm flex items-center justify-center space-x-2"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              <span>{saving ? 'Saving...' : 'Save Result'}</span>
+              <span>{match.status === 'COMPLETED' ? 'Update Result' : 'Save Result'}</span>
             </button>
+
+            {match.status === 'COMPLETED' && isKnockoutStage && (
+              <button
+                onClick={handleCorrect}
+                disabled={saving}
+                className="w-full bg-amber-600/20 hover:bg-amber-600 text-amber-500 hover:text-white border border-amber-600/30 disabled:opacity-50 disabled:cursor-not-allowed font-medium py-2 rounded-lg transition-colors text-sm flex items-center justify-center"
+              >
+                <span>Correct Result & Reset Downstream</span>
+              </button>
+            )}
           </div>
         )}
       </div>

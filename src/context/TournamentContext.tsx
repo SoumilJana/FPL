@@ -7,6 +7,17 @@ import {
   TournamentState, QualificationStatus, MatchUpdatePayload, GroupLabel
 } from '@/types/tournament';
 
+export interface GroupOverrides {
+  A: { rank1?: string; rank2?: string };
+  B: { rank1?: string; rank2?: string };
+  C: { rank1?: string; rank2?: string };
+}
+
+export interface GroupTieInfo {
+  group_id: string;
+  tiedTeams: { team_id: string; team_name: string }[];
+}
+
 interface TournamentContextType {
   // Data
   teams: Team[];
@@ -25,9 +36,12 @@ interface TournamentContextType {
   // Actions
   updateMatchResult: (matchId: string, payload: MatchUpdatePayload) => Promise<void>;
   generateMainQualifierFixtures: () => Promise<void>;
+  generateMainQualifierFixturesWithOverrides: (overrides: GroupOverrides) => Promise<void>;
   generateSemiFinalsFixtures: (wildcardTeamId?: string) => Promise<void>;
   generateFinalFixture: () => Promise<void>;
   resetTournament: () => Promise<void>;
+  // Corrects a match result and cascades to clear downstream generated fixtures
+  correctMatchResult: (matchId: string) => Promise<void>;
 
   // State
   loading: boolean;
@@ -36,6 +50,8 @@ interface TournamentContextType {
   // Helpers
   getTeamName: (id: string | null) => string;
   getTeamGroup: (id: string) => GroupLabel | null;
+  // Returns groups where rank 1 or rank 2 has ties (cannot auto-resolve)
+  getGroupTies: () => GroupTieInfo[];
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined);
@@ -199,9 +215,30 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     await fetchAll();
   };
 
-  // Generate Main Qualifier fixtures (A1 vs B2, B1 vs C2, C1 vs A2)
+  // Detect groups where rank 1 or rank 2 is shared by multiple teams
+  const getGroupTies = useCallback((): GroupTieInfo[] => {
+    const ties: GroupTieInfo[] = [];
+    const groupIds: GroupLabel[] = ['A', 'B', 'C'];
+    for (const gid of groupIds) {
+      const group = groupStandings.filter(s => s.group_id === gid);
+      // Count how many teams share rank 1 or rank 2
+      const rank1Teams = group.filter(s => s.group_rank === 1);
+      const rank2Teams = group.filter(s => s.group_rank === 2);
+      // A tie exists when rank 1 has >1 team (rank 2 disappears) OR rank 2 has >1 team
+      if (rank1Teams.length > 1 || rank2Teams.length > 1) {
+        // The tied pool is whichever rank is contested
+        const tiedPool = rank1Teams.length > 1 ? rank1Teams : rank2Teams;
+        ties.push({
+          group_id: gid,
+          tiedTeams: tiedPool.map(s => ({ team_id: s.team_id, team_name: s.team_name })),
+        });
+      }
+    }
+    return ties;
+  }, [groupStandings]);
+
+  // Generate Main Qualifier fixtures — auto (no ties) or with manual overrides
   const generateMainQualifierFixtures = async () => {
-    // Get group standings (already sorted by rank from DB view)
     const groupA = groupStandings.filter(s => s.group_id === 'A');
     const groupB = groupStandings.filter(s => s.group_id === 'B');
     const groupC = groupStandings.filter(s => s.group_id === 'C');
@@ -214,10 +251,31 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const c2 = groupC.find(s => s.group_rank === 2)?.team_id;
 
     if (!a1 || !a2 || !b1 || !b2 || !c1 || !c2) {
-      setError('Cannot generate MQ fixtures: group standings incomplete');
+      setError('Cannot auto-generate MQ: one or more groups have tied standings. Use "Override Group Selections" to pick teams manually.');
       return;
     }
 
+    await applyMQFixtures(a1, a2, b1, b2, c1, c2);
+  };
+
+  const generateMainQualifierFixturesWithOverrides = async (overrides: GroupOverrides) => {
+    const a1 = overrides.A.rank1;
+    const a2 = overrides.A.rank2;
+    const b1 = overrides.B.rank1;
+    const b2 = overrides.B.rank2;
+    const c1 = overrides.C.rank1;
+    const c2 = overrides.C.rank2;
+
+    if (!a1 || !a2 || !b1 || !b2 || !c1 || !c2) {
+      setError('Please select both 1st and 2nd place teams for every group before generating.');
+      return;
+    }
+
+    await applyMQFixtures(a1, a2, b1, b2, c1, c2);
+  };
+
+  // Shared MQ fixture writer
+  const applyMQFixtures = async (a1: string, a2: string, b1: string, b2: string, c1: string, c2: string) => {
     const mqMatches = matches.filter(m => m.stage === 'MAIN_QUALIFIERS').sort((a, b) => a.match_order - b.match_order);
     if (mqMatches.length !== 3) return;
 
@@ -256,14 +314,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return m.team_a_id!;
     });
 
-    // Sort winners by overall standings to get best/2nd/3rd
+    // Sort winners by overall standings to get best/2nd/3rd.
+    // Tie-breakers per official rules:
+    // 1. Points  2. Goal Difference  3. Goals Scored  4. Goals Conceded (fewest)
     const sortedWinners = winnerIds
       .map(id => overallStandings.find(s => s.team_id === id))
       .filter(Boolean)
       .sort((a, b) => {
         if (b!.points !== a!.points) return b!.points - a!.points;
         if (b!.goal_difference !== a!.goal_difference) return b!.goal_difference - a!.goal_difference;
-        return b!.goals_for - a!.goals_for;
+        if (b!.goals_for !== a!.goals_for) return b!.goals_for - a!.goals_for;
+        return a!.goals_against - b!.goals_against; // fewest goals conceded wins
       })
       .map(s => s!.team_id);
 
@@ -272,12 +333,17 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (overrideWildcardId) {
       wildcardId = overrideWildcardId;
     } else {
+      // Wildcard: best losing team.
+      // All 3 lost their MQ match so points are equal — start from GD.
+      // Tie-breakers per official rules:
+      // 1. Goal Difference  2. Goals Scored  3. Goals Conceded (fewest)
       const sortedLosers = loserIds
         .map(id => overallStandings.find(s => s.team_id === id))
         .filter(Boolean)
         .sort((a, b) => {
           if (b!.goal_difference !== a!.goal_difference) return b!.goal_difference - a!.goal_difference;
-          return b!.goals_for - a!.goals_for;
+          if (b!.goals_for !== a!.goals_for) return b!.goals_for - a!.goals_for;
+          return a!.goals_against - b!.goals_against; // fewest goals conceded wins
         });
       wildcardId = sortedLosers[0]!.team_id;
     }
@@ -299,6 +365,56 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         .eq('id', upd.id);
       if (err) {
         setError(`Failed to generate SF fixture: ${err.message}`);
+        return;
+      }
+    }
+
+    await fetchAll();
+  };
+
+  // Correct a completed match result — resets it to SCHEDULED and cascades
+  // downstream fixture clearing so the next round can be regenerated cleanly.
+  const correctMatchResult = async (matchId: string) => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match) return;
+
+    // Step 1: Reset this match to a blank state
+    const { error: err1 } = await supabase
+      .from('matches')
+      .update({
+        team_a_score: null,
+        team_b_score: null,
+        mom: null,
+        red_card_team_id: null,
+        notes: null,
+        penalty_shootout_winner_id: null,
+      })
+      .eq('id', matchId);
+
+    if (err1) {
+      setError(`Failed to reset match: ${err1.message}`);
+      return;
+    }
+
+    // Step 2: Cascade — clear downstream fixture team assignments + scores
+    // MQ correction → wipe SF team slots + scores, and Final team slots + scores
+    // SF correction → wipe Final team slots + scores
+    // The teams in downstream fixtures become TBD again so admin can regenerate.
+    const stagesToClear: string[] = [];
+    if (match.stage === 'MAIN_QUALIFIERS') {
+      stagesToClear.push('SEMI_FINALS', 'FINAL');
+    } else if (match.stage === 'SEMI_FINALS') {
+      stagesToClear.push('FINAL');
+    }
+
+    for (const stage of stagesToClear) {
+      // Clear team assignments (so generate buttons reappear)
+      const { error: err2 } = await supabase
+        .from('matches')
+        .update({ team_a_id: null, team_b_id: null, team_a_score: null, team_b_score: null, mom: null, red_card_team_id: null, notes: null, penalty_shootout_winner_id: null })
+        .eq('stage', stage);
+      if (err2) {
+        setError(`Failed to cascade clear ${stage}: ${err2.message}`);
         return;
       }
     }
@@ -380,9 +496,10 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       teams, matches, groupTeams, groupStandings, overallStandings,
       tournamentState, qualificationStatus,
       isAdmin, loginAdmin, logoutAdmin,
-      updateMatchResult, generateMainQualifierFixtures, generateSemiFinalsFixtures, generateFinalFixture, resetTournament,
+      updateMatchResult, generateMainQualifierFixtures, generateMainQualifierFixturesWithOverrides,
+      generateSemiFinalsFixtures, generateFinalFixture, resetTournament, correctMatchResult,
       loading, error,
-      getTeamName, getTeamGroup,
+      getTeamName, getTeamGroup, getGroupTies,
     }}>
       {children}
     </TournamentContext.Provider>
