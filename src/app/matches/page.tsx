@@ -3,8 +3,11 @@
 import { useTournament, GroupOverrides } from "@/context/TournamentContext";
 import MatchCard from "@/components/match-card";
 import { Stage } from "@/types/tournament";
-import { Loader2, Zap, AlertCircle } from "lucide-react";
+import { Loader2, Zap, AlertCircle, Filter } from "lucide-react";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
+
+type MatchFilter = 'ALL' | 'RQ' | 'KNOCKOUTS' | 'PENDING';
 
 export default function MatchesPage() {
   const {
@@ -16,6 +19,7 @@ export default function MatchesPage() {
   } = useTournament();
   const [generating, setGenerating] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [filter, setFilter] = useState<MatchFilter>('ALL');
 
   // Wildcard override state
   const [showWildcardPicker, setShowWildcardPicker] = useState(false);
@@ -96,9 +100,40 @@ export default function MatchesPage() {
             className="flex items-center space-x-2 px-4 py-2 bg-red-600/10 text-red-500 hover:bg-red-600 hover:text-white border border-red-600/30 rounded-lg transition-colors text-sm font-medium"
           >
             {isResetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <AlertCircle className="w-4 h-4" />}
-            <span>Reset Data</span>
+            <span className="hidden sm:inline">Reset Data</span>
           </button>
         )}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-8 bg-slate-900/50 p-2 rounded-xl border border-slate-800">
+        <div className="flex items-center pl-2 pr-4 text-slate-500">
+          <Filter className="w-4 h-4 mr-2" />
+          <span className="text-sm font-medium">Filter:</span>
+        </div>
+        <button
+          onClick={() => setFilter('ALL')}
+          className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border", filter === 'ALL' ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-transparent text-slate-400 border-transparent hover:bg-slate-800")}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setFilter('RQ')}
+          className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border", filter === 'RQ' ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-transparent text-slate-400 border-transparent hover:bg-slate-800")}
+        >
+          Group Stage
+        </button>
+        <button
+          onClick={() => setFilter('KNOCKOUTS')}
+          className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border", filter === 'KNOCKOUTS' ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-transparent text-slate-400 border-transparent hover:bg-slate-800")}
+        >
+          Knockouts
+        </button>
+        <button
+          onClick={() => setFilter('PENDING')}
+          className={cn("px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border", filter === 'PENDING' ? "bg-amber-500/20 text-amber-400 border-amber-500/30" : "bg-transparent text-slate-400 border-transparent hover:bg-slate-800")}
+        >
+          Pending Only
+        </button>
       </div>
 
       {error && (
@@ -109,7 +144,15 @@ export default function MatchesPage() {
       )}
 
       {stages.map((stage) => {
-        const stageMatches = matches.filter(m => m.stage === stage.key).sort((a, b) => a.match_order - b.match_order);
+        let stageMatches = matches.filter(m => m.stage === stage.key).sort((a, b) => a.match_order - b.match_order);
+        
+        // Apply filters
+        if (filter === 'RQ' && stage.key !== 'ROUND_QUALIFIERS') return null;
+        if (filter === 'KNOCKOUTS' && stage.key === 'ROUND_QUALIFIERS') return null;
+        if (filter === 'PENDING') {
+          stageMatches = stageMatches.filter(m => m.status !== 'COMPLETED');
+        }
+
         if (stageMatches.length === 0) return null;
 
         const isLocked = stageMatches.every(m => m.team_a_id === null && m.team_b_id === null);

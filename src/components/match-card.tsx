@@ -23,6 +23,7 @@ export default function MatchCard({ match }: MatchCardProps) {
   const [notes, setNotes] = useState(match.notes || "");
   const [shootoutWinnerId, setShootoutWinnerId] = useState(match.penalty_shootout_winner_id || "");
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // When scores change, clear any stale penalty winner and error
@@ -67,6 +68,8 @@ export default function MatchCard({ match }: MatchCardProps) {
       penalty_shootout_winner_id: (isKnockoutDraw && shootoutWinnerId) ? shootoutWinnerId : null,
     });
     setSaving(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   const handleCorrect = async () => {
@@ -240,11 +243,19 @@ export default function MatchCard({ match }: MatchCardProps) {
 
             <button
               onClick={handleSave}
-              disabled={saving}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2 rounded-lg transition-colors text-sm flex items-center justify-center space-x-2"
+              disabled={saving || saveSuccess}
+              className={cn(
+                "w-full font-medium py-2 rounded-lg transition-colors text-sm flex items-center justify-center space-x-2",
+                saveSuccess
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white"
+              )}
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              <span>{match.status === 'COMPLETED' ? 'Update Result' : 'Save Result'}</span>
+              {saveSuccess && !saving ? <span className="text-lg leading-none mr-1">✓</span> : null}
+              <span>
+                {saveSuccess ? 'Saved successfully!' : (match.status === 'COMPLETED' ? 'Update Result' : 'Save Result')}
+              </span>
             </button>
 
             {match.status === 'COMPLETED' && isKnockoutStage && (
